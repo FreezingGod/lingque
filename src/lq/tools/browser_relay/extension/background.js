@@ -105,6 +105,17 @@ function connect() {
   };
 }
 
+// ── Popup 通信 ───────────────────────────────────────────
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === 'getStatus') {
+    sendResponse({
+      connected: ws !== null && ws.readyState === WebSocket.OPEN,
+      targetTabId,
+    });
+  }
+  return false;
+});
+
 function updateBadge(text, color) {
   chrome.action.setBadgeText({ text });
   chrome.action.setBadgeBackgroundColor({ color });
