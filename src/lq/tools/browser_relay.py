@@ -29,7 +29,7 @@ TOOL_DEFINITION = {
     }
 }
 
-RELAY_URL = "http://127.0.0.1:18792/cdp"
+RELAY_URL = "http://127.0.0.1:50518/cdp"
 
 
 async def _execute_cdp(method: str, params: dict = None) -> dict:

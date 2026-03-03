@@ -1,7 +1,7 @@
 """
 Browser Relay Server
 
-本地中继服务器，监听 18792 端口。
+本地中继服务器，监听 50518 端口。
 - /ws        : Chrome 扩展通过 WebSocket 连接到这里
 - POST /cdp  : 灵雀 Agent 通过 HTTP 发送 CDP 命令
 
@@ -9,6 +9,10 @@ Browser Relay Server
   Agent -> HTTP POST /cdp -> Relay Server -> WebSocket -> Chrome Extension -> chrome.debugger API
 
 启动：python relay_server.py
+
+跨机器使用（SSH 隧道）：
+  在浏览器所在机器执行: ssh -L 50518:127.0.0.1:50518 用户名@服务器IP
+  扩展连接 ws://127.0.0.1:50518/ws
 """
 
 import asyncio
@@ -77,4 +81,4 @@ app.router.add_get('/ws', relay.ws_handler)
 app.router.add_post('/cdp', relay.cdp_handler)
 
 if __name__ == '__main__':
-    web.run_app(app, host='127.0.0.1', port=18792)
+    web.run_app(app, host='127.0.0.1', port=50518)

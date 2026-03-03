@@ -1,7 +1,11 @@
 // LingQue Browser Relay Extension
 // 通过 WebSocket 连接到本地中继服务器，接收 CDP 命令并执行
+//
+// 跨机器使用（SSH 隧道）：
+//   在本机执行: ssh -L 50518:127.0.0.1:50518 用户名@服务器IP
+//   扩展连接 ws://127.0.0.1:50518/ws
 
-const RELAY_URL = 'ws://127.0.0.1:18792/ws';
+const RELAY_URL = 'ws://127.0.0.1:50518/ws';
 let ws = null;
 let reconnectTimer = null;
 
