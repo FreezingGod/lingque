@@ -7,7 +7,7 @@ Browser Relay Client
 
 import httpx
 
-RELAY_URL = "http://127.0.0.1:18792/cdp"
+RELAY_URL = "http://127.0.0.1:50518/cdp"
 TIMEOUT = 35  # 略大于 server 侧的 30 秒超时
 
 

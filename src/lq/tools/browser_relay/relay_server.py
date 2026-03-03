@@ -25,16 +25,20 @@ logger = logging.getLogger(__name__)
 
 class BrowserRelay:
     def __init__(self):
-        self.ws_clients = set()
+        self.ws_client: web.WebSocketResponse | None = None
         self.pending_commands = {}
         self.command_id = 0
 
     async def ws_handler(self, request):
-        ws = web.WebSocketResponse()
+        ws = web.WebSocketResponse(heartbeat=20)
         await ws.prepare(request)
 
-        self.ws_clients.add(ws)
-        logger.info(f"Chrome extension connected. Total clients: {len(self.ws_clients)}")
+        # 新连接顶掉旧连接
+        if self.ws_client is not None and not self.ws_client.closed:
+            logger.info("Closing stale client, replaced by new connection")
+            await self.ws_client.close()
+        self.ws_client = ws
+        logger.info("Chrome extension connected")
 
         try:
             async for msg in ws:
@@ -43,15 +47,19 @@ class BrowserRelay:
                     cmd_id = data.get('id')
                     if cmd_id and cmd_id in self.pending_commands:
                         future = self.pending_commands.pop(cmd_id)
-                        future.set_result(data)
+                        if not future.done():
+                            future.set_result(data)
         finally:
-            self.ws_clients.discard(ws)
-            logger.info(f"Chrome extension disconnected. Remaining: {len(self.ws_clients)}")
+            if self.ws_client is ws:
+                self.ws_client = None
+            logger.info("Chrome extension disconnected")
 
         return ws
 
     async def cdp_handler(self, request):
-        if not self.ws_clients:
+        ws = self.ws_client
+        if ws is None or ws.closed:
+            self.ws_client = None
             return web.json_response({'error': 'No browser connected'}, status=503)
 
         body = await request.json()
@@ -65,8 +73,12 @@ class BrowserRelay:
         future = asyncio.get_event_loop().create_future()
         self.pending_commands[cmd_id] = future
 
-        ws = next(iter(self.ws_clients))
-        await ws.send_json(command)
+        try:
+            await ws.send_json(command)
+        except ConnectionResetError:
+            self.pending_commands.pop(cmd_id, None)
+            self.ws_client = None
+            return web.json_response({'error': 'Browser connection lost'}, status=503)
 
         try:
             result = await asyncio.wait_for(future, timeout=30)
@@ -77,8 +89,17 @@ class BrowserRelay:
 
 relay = BrowserRelay()
 app = web.Application()
+
+async def status_handler(request):
+    connected = relay.ws_client is not None and not relay.ws_client.closed
+    return web.json_response({
+        'connected': connected,
+        'pending': len(relay.pending_commands),
+    })
+
 app.router.add_get('/ws', relay.ws_handler)
 app.router.add_post('/cdp', relay.cdp_handler)
+app.router.add_get('/status', status_handler)
 
 if __name__ == '__main__':
     web.run_app(app, host='127.0.0.1', port=50518)
