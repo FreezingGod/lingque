@@ -73,6 +73,12 @@ function connect() {
         return;
       }
 
+      // 截图前激活 tab，防止黑屏
+      if (method === 'Page.captureScreenshot') {
+        await chrome.tabs.update(tabId, { active: true });
+        await new Promise(r => setTimeout(r, 200));
+      }
+
       // Attach debugger if not already attached
       try {
         await chrome.debugger.attach({ tabId }, '1.3');
