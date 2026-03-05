@@ -327,6 +327,12 @@ class TelegramAdapter(PlatformAdapter):
                 break
             except Exception:
                 logger.exception("长轮询异常")
+                # 发生异常时等待一段时间后重试
+                await asyncio.sleep(5)
+
+            # 无论成功或失败，都添加一个短暂延迟，避免过于频繁的请求
+            # getUpdates 本身有 30 秒超时，所以这里只需要在发生错误时添加额外延迟
+            # 正常情况下，getUpdates 会等待 30 秒，不需要额外延迟
 
         logger.info("Telegram 长轮询已停止")
 

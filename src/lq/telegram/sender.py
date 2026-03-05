@@ -105,15 +105,21 @@ class TelegramSender:
         files: dict | None = None,
         max_retries: int = 3,
     ) -> dict | None:
-        """发送 POST 请求到 Telegram Bot API，带自动重试。"""
+        """发送 POST 请求到 Telegram Bot API，带自动重试。
+
+        Args:
+            max_retries: 最大重试次数（不含首次请求）
+                        0 = 只尝试一次，不重试
+                        3 = 首次 + 最多重试 3 次（共 4 次）
+        """
         if not self._http:
             self._http = httpx.AsyncClient(timeout=40.0)
 
         url = f"{self._base_url}{method}"
-        retry_count = 0
+        attempt = 0  # 尝试次数（从 1 开始）
         delay = 1.0
 
-        while retry_count < max_retries:
+        while attempt <= max_retries:
             try:
                 resp = await self._http.post(url, json=data, params=params, files=files)
                 resp.raise_for_status()
@@ -132,7 +138,7 @@ class TelegramSender:
                             method,
                         )
                         await asyncio.sleep(retry_after)
-                        retry_count += 1
+                        attempt += 1
                         delay = retry_after
                         continue
 
@@ -152,23 +158,35 @@ class TelegramSender:
                     logger.debug("长轮询超时（无新消息）: %s", method)
                     # 长轮询超时不计入重试，直接返回空列表
                     return []
-                else:
-                    logger.warning("请求超时: %s", method)
-                retry_count += 1
-                if retry_count < max_retries:
+                # 其他方法超时时才重试
+                logger.warning("请求超时: %s", method)
+                attempt += 1
+                # 如果还有重试机会，等待后继续；否则直接让循环条件判断退出
+                if attempt <= max_retries:
                     await asyncio.sleep(delay)
                     delay *= 2
                 continue
 
             except httpx.HTTPStatusError as e:
                 logger.error("HTTP 错误: %s status=%d", method, e.response.status_code)
+                # getUpdates 的 HTTP 错误不应该终止轮询，返回空列表继续
+                if method == "getUpdates":
+                    return []
                 return None
 
             except Exception:
                 logger.exception("请求异常: %s", method)
+                # getUpdates 的异常不应该终止轮询，返回空列表继续
+                if method == "getUpdates":
+                    return []
                 return None
 
-        logger.error("请求失败，已达最大重试次数: %s", method)
+        # getUpdates 达到最大重试次数时，不应该打印 ERROR 级别日志
+        # 因为这是长轮询的正常行为（网络问题时会持续重试）
+        if method == "getUpdates":
+            logger.debug("长轮询重试失败，等待后重试: %s", method)
+        else:
+            logger.error("请求失败，已达最大重试次数: %s", method)
         return None
 
     # ── 核心 API ──
@@ -197,6 +215,9 @@ class TelegramSender:
 
         Returns:
             更新列表，每个元素为一个 Update 对象
+
+        Note:
+            长轮询超时是正常行为（无新消息），应在超时时返回空列表。
         """
         params = {"offset": offset, "timeout": timeout}
         if allowed_updates:
@@ -354,12 +375,22 @@ class TelegramSender:
         """设置消息反应（POST /setMessageReaction）。
 
         仅支持单个 emoji 反应。
+        emoji 为空字符串时清除所有 reactions。
         """
-        result = await self._request("setMessageReaction", data={
-            "chat_id": chat_id,
-            "message_id": message_id,
-            "reaction": [{"type": "emoji", "emoji": emoji}],
-        })
+        # 清除 reaction 时发送空数组
+        if not emoji:
+            data = {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "reaction": [],
+            }
+        else:
+            data = {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "reaction": [{"type": "emoji", "emoji": emoji}],
+            }
+        result = await self._request("setMessageReaction", data=data)
         return result is not None
 
     async def get_file(self, file_id: str) -> dict | None:
