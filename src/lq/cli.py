@@ -26,7 +26,7 @@ from lq.templates import (
     write_heartbeat_template,
     write_memory_template,
     write_soul_template,
-    write_systemd_service,
+    write_service_config,
 )
 
 
@@ -119,12 +119,12 @@ def init(name: str, from_env: str | None, owner: str) -> None:
     from lq.templates import write_progress_template
     write_progress_template(home / "PROGRESS.md")
 
-    # 生成 systemd service
-    service_path = write_systemd_service(slug)
+    # 生成服务配置（根据平台选择 systemd 或 launchd）
+    service_path, service_type = write_service_config(slug)
 
     click.echo(f"✓ 实例 @{name} (slug: {slug}) 初始化完成")
     click.echo(f"  配置目录: {home}")
-    click.echo(f"  Systemd:  {service_path}")
+    click.echo(f"  服务配置:  {service_path} ({service_type})")
     if owner:
         click.echo(f"  主人:      {owner}")
     else:
@@ -136,7 +136,17 @@ def init(name: str, from_env: str | None, owner: str) -> None:
     click.echo("后续操作:")
     click.echo(f"  编辑人格:   $EDITOR {home}/SOUL.md")
     click.echo(f"  启动:       uv run lq start @{name}")
-    click.echo(f"  Systemd:    systemctl --user enable --now lq-{slug}")
+
+    # 根据平台显示不同的服务管理命令
+    if service_type == "launchd":
+        bundle_id = f"ai.lingque.{slug}"
+        click.echo(f"  服务管理:   launchctl load {service_path}")
+        click.echo(f"              launchctl unload {bundle_id}")
+        click.echo(f"              launchctl list | grep {bundle_id}")
+    else:
+        click.echo(f"  服务管理:   systemctl --user enable --now lq-{slug}")
+        click.echo(f"              systemctl --user status lq-{slug}")
+        click.echo(f"              journalctl --user -u lq-{slug} -f")
 
 
 def _parse_adapters(adapter_str: str) -> list[str]:
@@ -458,8 +468,9 @@ def upgrade(instance: str) -> None:
     click.echo("升级 lingque ...")
     subprocess.run(["uv", "sync", "--upgrade"])
 
-    write_systemd_service(config.slug)
+    service_path, service_type = write_service_config(config.slug)
     click.echo(f"@{display} 升级完成")
+    click.echo(f"服务配置已更新: {service_path} ({service_type})")
 
 
 def _read_pid(home: Path) -> int | None:
